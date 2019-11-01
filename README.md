@@ -3,7 +3,9 @@
 ## Plan
 
 Week 9: user experiment >=6 people; libs selection
+
 Week 10: user experiment finished; visual fixation recognition, single blink recognition
+
 Week 11: to be continue...
 
 ## Milestone 1
@@ -32,7 +34,7 @@ Week 11: to be continue...
 		
 	- design eye gestures
 	
-	  
+
 	
 + Technique(2 people)
 	- android? java/kotlin?
