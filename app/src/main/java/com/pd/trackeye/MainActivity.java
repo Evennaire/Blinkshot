@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.media.MediaMetadataRetriever;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -19,8 +20,6 @@ import android.view.Display;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
-import android.widget.EditText;
-import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.VideoView;
@@ -41,8 +40,12 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
     VideoView videoView;
-    EditText textView;
+    TextView textView;
     Context context;
+
+    long startTime;
+
+
     //For looking logs
     ArrayAdapter adapter;
     ArrayList<String> list = new ArrayList<>();
@@ -61,6 +64,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         context = MainActivity.this;
+
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, 1);
             //Toast.makeText(this, "Grant Permission and restart app", Toast.LENGTH_SHORT).show();
@@ -70,8 +74,42 @@ public class MainActivity extends AppCompatActivity {
             textView = findViewById(R.id.textView);
             adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, list);
             videoView.setVideoURI(Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.videoplayback));
-            //videoView.start();
+            videoView.start();
             createCameraSource();
+            MyThread thread = new MyThread();
+            thread.start();
+            startTime = System.currentTimeMillis();
+
+
+        }
+    }
+
+
+    class MyThread extends Thread {
+        @Override
+        public void run() {
+            super.run();
+            while(true){
+                MediaMetadataRetriever rev = new MediaMetadataRetriever();
+
+                rev.setDataSource(MainActivity.this, Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.videoplayback)); //这里第一个参数需要Context，传this指针
+                long currentTime = System.currentTimeMillis() - startTime;
+
+                if (currentTime >= 20000 && currentTime <= 20015 || currentTime >= 40000 && currentTime <= 40015 || currentTime >= 60000 && currentTime <= 60015){
+                    Time time = new Time("GMT+8");     //这里求出了手机系统当前的时间，用来给截出的图片作为名字。否则名字相同，就只会产生一个图片，要想产生多个图片，便需要每个                                                 图片的名字不同，我就用最水的办法，用系统时间来命名了
+                    time.setToNow();
+                    int hour = time.hour + 8;
+                    int second = time.second;
+                    int minute = time.minute;
+                    Log.i("INFOOOOOOOOOOOOOOO", Integer.toString(hour) +"."+  Integer.toString(minute) +"."+  Integer.toString(second));
+                    MainActivity.this.runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(context, "Please take a screenshot!!", Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
+            }
         }
     }
 
@@ -96,7 +134,7 @@ public class MainActivity extends AppCompatActivity {
     //This class will use google vision api to detect eyes
     private class EyesTracker extends Tracker<Face> {
 
-        private final float THRESHOLD = 0.05f;
+        private final float THRESHOLD = 0.01f;
         private final float THRESHOLD_STARE = 0.8f;
 
 
@@ -113,8 +151,14 @@ public class MainActivity extends AppCompatActivity {
                 //if (!videoView.isPlaying()) videoView.start();
                 lastOpen = System.currentTimeMillis();
                 if (System.currentTimeMillis() - lastBlink > 200 && System.currentTimeMillis() - lastClose < 100) {
-                    after_blink();
-                    lastBlink = System.currentTimeMillis();
+                    //after_blink();
+                    if (System.currentTimeMillis() - lastBlink < 500) {
+                        after_blink();
+                        lastBlink = 0;
+                    }
+                    else {
+                        lastBlink = System.currentTimeMillis();
+                    }
                 }
             } else {
                 //if (videoView.isPlaying()) videoView.pause();
@@ -249,6 +293,13 @@ public class MainActivity extends AppCompatActivity {
      */
     public void GetandSaveCurrentImage()
     {
+        MediaMetadataRetriever rev = new MediaMetadataRetriever();
+
+        rev.setDataSource(this, Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.videoplayback)); //这里第一个参数需要Context，传this指针
+
+        Bitmap bitmap = rev.getFrameAtTime(videoView.getCurrentPosition() * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
+
+
         //构建Bitmap
         WindowManager windowManager = getWindowManager();
         Display display = windowManager.getDefaultDisplay();
@@ -259,6 +310,8 @@ public class MainActivity extends AppCompatActivity {
         View decorview = this.getWindow().getDecorView();
         decorview.setDrawingCacheEnabled(true);
         Bmp = decorview.getDrawingCache();
+
+        Bmp = bitmap;
         //图片存储路径
         String SavePath = getSDCardPath()+"/Pictures/Screenshots";  //这里是截图保存的路径
         //保存Bitmap
@@ -274,7 +327,7 @@ public class MainActivity extends AppCompatActivity {
             int hour = time.hour;
             int sec = time.second;
             //文件
-            String filepath = SavePath+"/" + year+month+day+minute+sec+".png";   //这里给图片命名
+            String filepath = SavePath+"/" + year+month+day+minute+sec+ "::" + Long.toString(System.currentTimeMillis() - startTime) + ".png";   //这里给图片命名
             File file = new File(filepath);
             if(!path.exists()){   //判断路径是否存在
                 path.mkdirs();
@@ -288,7 +341,7 @@ public class MainActivity extends AppCompatActivity {
                 Bmp.compress(Bitmap.CompressFormat.PNG, 90, fos);
                 fos.flush();
                 fos.close();
-                Toast.makeText(getApplicationContext(), "截屏文件已保存至SDCard/qxbf/ScreenImages/目录下",Toast.LENGTH_LONG).show();
+                //Toast.makeText(getApplicationContext(), "截屏文件已保存至SDCard/qxbf/ScreenImages/目录下",Toast.LENGTH_LONG).show();
             }
         } catch (Exception e) {
             e.printStackTrace();
