@@ -1,13 +1,23 @@
 package com.pd.trackeye;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.media.Ringtone;
+import android.media.RingtoneManager;
 import android.net.Uri;
+import android.os.Environment;
+import android.os.Looper;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.text.format.Time;
 import android.util.Log;
+import android.view.Display;
+import android.view.View;
+import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.ListView;
@@ -22,6 +32,8 @@ import com.google.android.gms.vision.Tracker;
 import com.google.android.gms.vision.face.Face;
 import com.google.android.gms.vision.face.FaceDetector;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 
@@ -36,10 +48,11 @@ public class MainActivity extends AppCompatActivity {
     ArrayList<String> list = new ArrayList<>();
 
     // blink detection
-    boolean eyeStatus = false;
-    boolean faceStatus = false;
+    boolean isStaring = false; // 是否在注视
     long lastClose = 0;
     long lastOpen = 0;
+    long lastBlink = 0;
+
 
     CameraSource cameraSource;
 
@@ -57,20 +70,35 @@ public class MainActivity extends AppCompatActivity {
             textView = findViewById(R.id.textView);
             adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, list);
             videoView.setVideoURI(Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.videoplayback));
-            videoView.start();
+            //videoView.start();
             createCameraSource();
         }
     }
 
     public void after_blink() {
-        Toast.makeText(this, "a blink!", Toast.LENGTH_SHORT).show();
+        Log.i("INFOOOOOOOOOOOOOOO","a blink !!!");
+        MainActivity.this.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(context, "Screenshot!", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+
+        Uri notification = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+        Ringtone r = RingtoneManager.getRingtone(context, notification);
+        r.play();
+
+        GetandSaveCurrentImage();
     }
 
 
     //This class will use google vision api to detect eyes
     private class EyesTracker extends Tracker<Face> {
 
-        private final float THRESHOLD = 0.25f;
+        private final float THRESHOLD = 0.05f;
+        private final float THRESHOLD_STARE = 0.8f;
+
 
         public EyesTracker() {
             //Toast.makeText(context, "tracker", Toast.LENGTH_SHORT).show();
@@ -78,18 +106,23 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onUpdate(Detector.Detections<Face> detections, Face face) {
+            //Log.i("INFOOOOOOOOOOOOOOO","left : " + face.getIsLeftEyeOpenProbability() + " right: " + face.getIsRightEyeOpenProbability());
             if (face.getIsLeftEyeOpenProbability() > THRESHOLD || face.getIsRightEyeOpenProbability() > THRESHOLD) { // open
-                Log.i(TAG, "onUpdate: Eyes Detected");
-                showStatus("Eyes Detected and open, so video continues");
-                if (!videoView.isPlaying()) videoView.start();
-                eyeStatus = true;
+                //Log.i(TAG, "onUpdate: Eyes Detected");
+                showStatus("Eyes Detected and open");
+                //if (!videoView.isPlaying()) videoView.start();
                 lastOpen = System.currentTimeMillis();
+                if (System.currentTimeMillis() - lastBlink > 200 && System.currentTimeMillis() - lastClose < 100) {
+                    after_blink();
+                    lastBlink = System.currentTimeMillis();
+                }
+            } else {
+                //if (videoView.isPlaying()) videoView.pause();
+                if (isStaring) lastClose = System.currentTimeMillis();
+                showStatus("Eyes Detected and closed");
             }
-            else {
-                if (videoView.isPlaying()) videoView.pause();
-                eyeStatus = false;
-                lastOpen = System.currentTimeMillis();
-                showStatus("Eyes Detected and closed, so video paused");
+            if (face.getIsLeftEyeOpenProbability() > THRESHOLD_STARE && face.getIsRightEyeOpenProbability() > THRESHOLD_STARE) {
+                isStaring = true;
             }
         }
 
@@ -97,7 +130,6 @@ public class MainActivity extends AppCompatActivity {
         public void onMissing(Detector.Detections<Face> detections) {
             super.onMissing(detections);
             showStatus("Face Not Detected yet!");
-            faceStatus = false;
         }
 
         @Override
@@ -137,7 +169,7 @@ public class MainActivity extends AppCompatActivity {
         detector.setProcessor(new MultiProcessor.Builder(new FaceTrackerFactory()).build());
 
         cameraSource = new CameraSource.Builder(this, detector)
-                .setRequestedPreviewSize(1024, 768)
+                .setRequestedPreviewSize(1024, 1500)
                 .setFacing(CameraSource.CAMERA_FACING_FRONT)
                 .setRequestedFps(30.0f)
                 .build();
@@ -189,9 +221,9 @@ public class MainActivity extends AppCompatActivity {
         if (cameraSource!=null) {
             cameraSource.stop();
         }
-        if (videoView.isPlaying()) {
-            videoView.pause();
-        }
+        //if (videoView.isPlaying()) {
+            //videoView.pause();
+        //}
     }
 
     public void showStatus(final String message) {
@@ -208,6 +240,101 @@ public class MainActivity extends AppCompatActivity {
         super.onDestroy();
         if (cameraSource!=null) {
             cameraSource.release();
+        }
+    }
+
+
+    /**
+     * 获取和保存当前屏幕的截图
+     */
+    public void GetandSaveCurrentImage()
+    {
+        //构建Bitmap
+        WindowManager windowManager = getWindowManager();
+        Display display = windowManager.getDefaultDisplay();
+        int w = display.getWidth();
+        int h = display.getHeight();
+        Bitmap Bmp = Bitmap.createBitmap( w, h, Bitmap.Config.ARGB_8888 );
+        //获取屏幕
+        View decorview = this.getWindow().getDecorView();
+        decorview.setDrawingCacheEnabled(true);
+        Bmp = decorview.getDrawingCache();
+        //图片存储路径
+        String SavePath = getSDCardPath()+"/Pictures/Screenshots";  //这里是截图保存的路径
+        //保存Bitmap
+        try {
+            PermisionUtils.verifyStoragePermissions(this);
+            File path = new File(SavePath);
+            Time time = new Time("GMT+8");     //这里求出了手机系统当前的时间，用来给截出的图片作为名字。否则名字相同，就只会产生一个图片，要想产生多个图片，便需要每个                                                 图片的名字不同，我就用最水的办法，用系统时间来命名了
+            time.setToNow();
+            int year = time.year;
+            int month = time.month;
+            int day = time.monthDay;
+            int minute = time.minute;
+            int hour = time.hour;
+            int sec = time.second;
+            //文件
+            String filepath = SavePath+"/" + year+month+day+minute+sec+".png";   //这里给图片命名
+            File file = new File(filepath);
+            if(!path.exists()){   //判断路径是否存在
+                path.mkdirs();
+            }
+            if (!file.exists()) {
+                file.createNewFile();
+            }
+            FileOutputStream fos = null;
+            fos = new FileOutputStream(file);
+            if (null != fos) {
+                Bmp.compress(Bitmap.CompressFormat.PNG, 90, fos);
+                fos.flush();
+                fos.close();
+                Toast.makeText(getApplicationContext(), "截屏文件已保存至SDCard/qxbf/ScreenImages/目录下",Toast.LENGTH_LONG).show();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    /**
+     * 获取SDCard的目录路径功能
+     * @return
+     */
+    public String getSDCardPath() {
+        File sdcardDir = null;
+        //判断SDCard是否存在
+        boolean sdcardExist = Environment.getExternalStorageState().equals(android.os.Environment.MEDIA_MOUNTED);
+        if (sdcardExist) {
+            sdcardDir = Environment.getExternalStorageDirectory();
+        }
+        return sdcardDir.toString();
+    }
+
+}
+
+
+class PermisionUtils {
+
+    // Storage Permissions
+    private static final int REQUEST_EXTERNAL_STORAGE = 1;
+    private static String[] PERMISSIONS_STORAGE = {
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE};
+
+    /**
+     * Checks if the app has permission to write to device storage
+     * If the app does not has permission then the user will be prompted to
+     * grant permissions
+     *
+     * @param activity
+     */
+    public static void verifyStoragePermissions(Activity activity) {
+        // Check if we have write permission
+        int permission = ActivityCompat.checkSelfPermission(activity,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE);
+
+        if (permission != PackageManager.PERMISSION_GRANTED) {
+            // We don't have permission so prompt the user
+            ActivityCompat.requestPermissions(activity, PERMISSIONS_STORAGE,
+                    REQUEST_EXTERNAL_STORAGE);
         }
     }
 }
