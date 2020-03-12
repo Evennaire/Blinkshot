@@ -145,24 +145,28 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onUpdate(Detector.Detections<Face> detections, Face face) {
             //Log.i("INFOOOOOOOOOOOOOOO","left : " + face.getIsLeftEyeOpenProbability() + " right: " + face.getIsRightEyeOpenProbability());
-            if (face.getIsLeftEyeOpenProbability() > THRESHOLD || face.getIsRightEyeOpenProbability() > THRESHOLD) { // open
+            if (face.getIsLeftEyeOpenProbability() > THRESHOLD && face.getIsRightEyeOpenProbability() > THRESHOLD) { // open
                 //Log.i(TAG, "onUpdate: Eyes Detected");
                 showStatus("Eyes Detected and open");
                 //if (!videoView.isPlaying()) videoView.start();
                 lastOpen = System.currentTimeMillis();
-                if (System.currentTimeMillis() - lastBlink > 200 && System.currentTimeMillis() - lastClose < 100) {
-                    //after_blink();
-                    if (System.currentTimeMillis() - lastBlink < 500) {
-                        after_blink();
-                        lastBlink = 0;
-                    }
-                    else {
-                        lastBlink = System.currentTimeMillis();
-                    }
+                if (System.currentTimeMillis() - lastClose < 100) {
+                    after_blink();
+//                    if (System.currentTimeMillis() - lastBlink < 500) {
+//                        after_blink();
+//                        lastBlink = 0;
+//                    }
+//                    else {
+//                        lastBlink = System.currentTimeMillis();
+//                    }
                 }
             } else {
                 //if (videoView.isPlaying()) videoView.pause();
-                if (isStaring) lastClose = System.currentTimeMillis();
+                if (isStaring) {
+                    if ((face.getIsLeftEyeOpenProbability() < THRESHOLD && face.getIsRightEyeOpenProbability() > THRESHOLD_STARE) ||  (face.getIsLeftEyeOpenProbability() > THRESHOLD_STARE && face.getIsRightEyeOpenProbability() < THRESHOLD)) {
+                        lastClose = System.currentTimeMillis();
+                    }
+                }
                 showStatus("Eyes Detected and closed");
             }
             if (face.getIsLeftEyeOpenProbability() > THRESHOLD_STARE && face.getIsRightEyeOpenProbability() > THRESHOLD_STARE) {
@@ -242,6 +246,7 @@ public class MainActivity extends AppCompatActivity {
         if (cameraSource != null) {
             try {
                 if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    // TODO: Consider calling
                     // TODO: Consider calling
                     //    ActivityCompat#requestPermissions
                     // here to request the missing permissions, and then overriding
